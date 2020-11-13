@@ -1245,7 +1245,7 @@ EXPORT_SYMBOL(install_exec_creds);
 /*
  * determine how safe it is to execute the proposed program
  * - the caller must hold ->cred_guard_mutex to protect against
- *   PTRACE_ATTACH or seccomp thread-sync
+ *   PTRACE_ATTACH
  */
 int check_unsafe_exec(struct linux_binprm *bprm)
 {
@@ -1254,13 +1254,6 @@ int check_unsafe_exec(struct linux_binprm *bprm)
 	int res = 0;
 
 	bprm->unsafe = tracehook_unsafe_exec(p);
-
-	/*
-	 * This isn't strictly necessary, but it makes it harder for LSMs to
-	 * mess up.
-	 */
-	if (task_no_new_privs(current))
-		bprm->unsafe |= LSM_UNSAFE_NO_NEW_PRIVS;
 
 	n_fs = 1;
 	spin_lock(&p->fs->lock);
@@ -1296,8 +1289,7 @@ static void bprm_fill_uid(struct linux_binprm *bprm)
 	bprm->cred->euid = current_euid();
 	bprm->cred->egid = current_egid();
 
-	if (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID &&
-                task_no_new_privs(current))
+	if (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID)
 		return;
 
 	inode = bprm->file->f_path.dentry->d_inode;
@@ -1822,7 +1814,7 @@ static int zap_process(struct task_struct *start, int exit_code)
 
 	t = start;
 	do {
-		task_clear_jobctl_pending(t, JOBCTL_PENDING_MASK);
+		task_clear_group_stop_pending(t);
 		if (t != current && t->mm) {
 			sigaddset(&t->pending.signal, SIGKILL);
 			signal_wake_up(t, 1);
@@ -2072,8 +2064,8 @@ static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 	fd_install(0, rp);
 	spin_lock(&cf->file_lock);
 	fdt = files_fdtable(cf);
-	__set_open_fd(0, fdt);
-	__clear_close_on_exec(0, fdt);
+	FD_SET(0, fdt->open_fds);
+	FD_CLR(0, fdt->close_on_exec);
 	spin_unlock(&cf->file_lock);
 
 	/* and disallow core files too */
